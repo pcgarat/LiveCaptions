@@ -1,3 +1,6 @@
 [submodule "subprojects/april-asr"]
 	path = subprojects/april-asr
 	url = https://github.com/abb128/april-asr.git
+[submodule "translation-api"]
+	path = translation-api
+	url = git@github.com:pcgarat/translation-api.git
