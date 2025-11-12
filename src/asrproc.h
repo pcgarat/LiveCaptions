@@ -39,4 +39,5 @@ void asr_thread_pause(asr_thread thread, bool pause);
 void asr_thread_set_text_stream_active(asr_thread thread, bool active);
 int asr_thread_samplerate(asr_thread thread);
 void asr_thread_flush(asr_thread thread);
+void asr_thread_update_translation_service(asr_thread thread);
 void free_asr_thread(asr_thread thread);

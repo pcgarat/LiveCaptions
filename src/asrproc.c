@@ -38,6 +38,7 @@
 #include "livecaptions-application.h"
 #include "history.h"
 #include "common.h"
+#include "translation-service.h"
 
 struct asr_thread_i {
     volatile size_t sound_counter;
@@ -65,6 +66,12 @@ struct asr_thread_i {
     volatile bool ending;
 
     bool errored;
+
+    // Translation service
+    TranslationService *translation_service;
+    GSettings *settings;
+    char *translated_text;
+    GMutex translation_mutex;
 };
 
 
@@ -98,13 +105,60 @@ static void *run_asr_thread(void *userdata){
     return NULL;
 }
 
+// Callback cuando la traducción está lista
+static void translation_callback(const char *translated_text,
+                                 GError *error,
+                                 void *user_data)
+{
+    asr_thread data = (asr_thread)user_data;
+
+    g_mutex_lock(&data->translation_mutex);
+    
+    if (error != NULL) {
+        // En caso de error, mantener el texto original o mostrar mensaje
+        g_warning("Error de traducción: %s", error->message);
+        g_free(data->translated_text);
+        data->translated_text = NULL;
+    } else if (translated_text != NULL && strlen(translated_text) > 0) {
+        g_free(data->translated_text);
+        data->translated_text = g_strdup(translated_text);
+        g_mutex_unlock(&data->translation_mutex);
+        // Actualizar la UI con el texto traducido
+        g_idle_add(main_thread_update_label, data);
+        return;
+    } else {
+        g_free(data->translated_text);
+        data->translated_text = NULL;
+    }
+    
+    g_mutex_unlock(&data->translation_mutex);
+}
+
 static gboolean main_thread_update_label(void *userdata){
     asr_thread data = userdata;
 
     if((data->window == NULL) || (data->pause)) return G_SOURCE_REMOVE;
 
     g_mutex_lock(&data->text_mutex);
-    line_generator_set_text(&data->line, data->window->label);
+    
+    // Verificar si la traducción está habilitada
+    bool translation_enabled = g_settings_get_boolean(data->settings, "translation-enabled") &&
+                               data->translation_service != NULL &&
+                               translation_service_is_configured(data->translation_service);
+    
+    if (translation_enabled) {
+        // Si la traducción está habilitada, solo mostrar texto traducido
+        g_mutex_lock(&data->translation_mutex);
+        if (data->translated_text != NULL && strlen(data->translated_text) > 0) {
+            // Mostrar texto traducido como texto plano (sin markup)
+            gtk_label_set_text(data->window->label, data->translated_text);
+        }
+        // Si no hay traducción aún, NO mostrar nada (mantener el texto anterior)
+        g_mutex_unlock(&data->translation_mutex);
+    } else {
+        // Si la traducción NO está habilitada, mostrar texto original
+        line_generator_set_text(&data->line, data->window->label);
+    }
     
     if(data->text_stream_active) {
         LiveCaptionsApplication *application = LIVECAPTIONS_APPLICATION(gtk_window_get_application(GTK_WINDOW(data->window)));
@@ -142,8 +196,61 @@ static void april_result_handler(void* userdata, AprilResultType result, size_t 
                 commit_tokens_to_current_history(tokens, count);
             }
 
+            // Verificar si la traducción está habilitada
+            bool translation_enabled = data->translation_service != NULL && 
+                                       g_settings_get_boolean(data->settings, "translation-enabled") &&
+                                       translation_service_is_configured(data->translation_service);
+            
+            // Iniciar traducción si está habilitada
+            if (translation_enabled) {
+                const char *translation_mode = g_settings_get_string(data->settings, "translation-mode");
+                bool should_translate = FALSE;
+                
+                if (g_str_equal(translation_mode, "realtime")) {
+                    // Traducir tanto parciales como finales
+                    should_translate = TRUE;
+                } else if (g_str_equal(translation_mode, "final-only")) {
+                    // Traducir solo finales
+                    should_translate = (result == APRIL_RESULT_RECOGNITION_FINAL);
+                }
+                
+                if (should_translate) {
+                    const char *plaintext = line_generator_get_plaintext(&data->line);
+                    if (plaintext != NULL && strlen(plaintext) > 0) {
+                        gchar *source_lang = g_settings_get_string(data->settings, "translation-source-language");
+                        gchar *target_lang = g_settings_get_string(data->settings, "translation-target-language");
+                        
+                        // Limpiar traducción anterior
+                        g_mutex_lock(&data->translation_mutex);
+                        g_free(data->translated_text);
+                        data->translated_text = NULL;
+                        g_mutex_unlock(&data->translation_mutex);
+                        
+                        // Iniciar traducción asíncrona
+                        translation_service_translate_async(data->translation_service,
+                                                           plaintext,
+                                                           source_lang ? source_lang : "auto",
+                                                           target_lang ? target_lang : "es",
+                                                           translation_callback,
+                                                           data);
+                        
+                        g_free(source_lang);
+                        g_free(target_lang);
+                    }
+                }
+                
+                g_free(translation_mode);
+                
+                // Si la traducción está habilitada, NO actualizar la UI aquí
+                // La UI se actualizará cuando llegue la traducción en el callback
+            } else {
+                // Si la traducción NO está habilitada, actualizar la UI con el texto original
+                g_mutex_unlock(&data->text_mutex);
+                g_idle_add(main_thread_update_label, data);
+                return; // Salir temprano para evitar el unlock duplicado
+            }
+
             g_mutex_unlock(&data->text_mutex);
-            g_idle_add(main_thread_update_label, data);
             break;
         }
 
@@ -210,23 +317,68 @@ int asr_thread_samplerate(asr_thread thread) {
     return aam_get_sample_rate(thread->model);
 }
 
+// Wrapper para el callback de GSettings
+static void on_translation_settings_changed(GSettings *settings,
+                                            const gchar *key,
+                                            gpointer user_data)
+{
+    (void)settings; // No usado
+    (void)key; // No usado
+    asr_thread thread = (asr_thread)user_data;
+    asr_thread_update_translation_service(thread);
+}
+
 asr_thread create_asr_thread(const char *model_path){
     asr_thread data = calloc(1, sizeof(struct asr_thread_i));
 
     line_generator_init(&data->line);
 
+    // Inicializar settings y servicio de traducción
+    data->settings = g_settings_new("net.sapples.LiveCaptions");
+    
+    // Inicializar mutexes
+    g_mutex_init(&data->text_mutex);
+    g_mutex_init(&data->translation_mutex);
+    
+    // Crear servicio de traducción
+    const char *service_type = g_settings_get_string(data->settings, "translation-service");
+    if (service_type != NULL) {
+        data->translation_service = translation_service_create(service_type, data->settings);
+    }
+    g_free((gpointer)service_type);
+    
+    // Conectar cambios de configuración para actualizar el servicio
+    g_signal_connect(data->settings, "changed::translation-service",
+                    G_CALLBACK(on_translation_settings_changed), data);
+    g_signal_connect(data->settings, "changed::amazon-access-key",
+                    G_CALLBACK(on_translation_settings_changed), data);
+    g_signal_connect(data->settings, "changed::amazon-secret-key",
+                    G_CALLBACK(on_translation_settings_changed), data);
+    g_signal_connect(data->settings, "changed::google-api-key",
+                    G_CALLBACK(on_translation_settings_changed), data);
+    g_signal_connect(data->settings, "changed::microsoft-subscription-key",
+                    G_CALLBACK(on_translation_settings_changed), data);
+    g_signal_connect(data->settings, "changed::deepl-api-key",
+                    G_CALLBACK(on_translation_settings_changed), data);
+    g_signal_connect(data->settings, "changed::deepl-use-free-api",
+                    G_CALLBACK(on_translation_settings_changed), data);
+
     if(!asr_thread_update_model(data, model_path)){
         char *model_default = GET_MODEL_PATH();
         if(!asr_thread_update_model(data, model_default)) {
+            // Limpiar en caso de error
+            if (data->translation_service) {
+                translation_service_free(data->translation_service);
+            }
+            g_mutex_clear(&data->translation_mutex);
+            g_mutex_clear(&data->text_mutex);
+            g_object_unref(data->settings);
+            free(data);
             return NULL;
         }
 
-        GSettings *settings = g_settings_new("net.sapples.LiveCaptions");
-        g_settings_set_string(settings, "active-model", model_default);
-        g_object_unref(G_OBJECT(settings));
+        g_settings_set_string(data->settings, "active-model", model_default);
     }
-
-    g_mutex_init(&data->text_mutex);
 
     data->thread_id = g_thread_new("lcap-audiothread", run_asr_thread, data);
 
@@ -321,6 +473,33 @@ void asr_thread_flush(asr_thread thread) {
     aas_flush(thread->session);
 }
 
+void asr_thread_update_translation_service(asr_thread thread) {
+    if (thread == NULL || thread->settings == NULL) {
+        return;
+    }
+
+    g_mutex_lock(&thread->translation_mutex);
+    
+    // Liberar servicio anterior
+    if (thread->translation_service != NULL) {
+        translation_service_free(thread->translation_service);
+        thread->translation_service = NULL;
+    }
+    
+    // Limpiar traducción anterior
+    g_free(thread->translated_text);
+    thread->translated_text = NULL;
+    
+    // Crear nuevo servicio con la configuración actual
+    const char *service_type = g_settings_get_string(thread->settings, "translation-service");
+    if (service_type != NULL) {
+        thread->translation_service = translation_service_create(service_type, thread->settings);
+    }
+    g_free((gpointer)service_type);
+    
+    g_mutex_unlock(&thread->translation_mutex);
+}
+
 void free_asr_thread(asr_thread thread) {
     thread->ending = true;
 
@@ -335,6 +514,24 @@ void free_asr_thread(asr_thread thread) {
         aam_free(thread->model);
 
     g_thread_unref(thread->thread_id); // ?
+
+    // Limpiar servicio de traducción
+    g_mutex_lock(&thread->translation_mutex);
+    if (thread->translation_service != NULL) {
+        translation_service_free(thread->translation_service);
+        thread->translation_service = NULL;
+    }
+    g_free(thread->translated_text);
+    thread->translated_text = NULL;
+    g_mutex_unlock(&thread->translation_mutex);
+    
+    g_mutex_clear(&thread->translation_mutex);
+    g_mutex_unlock(&thread->text_mutex);
+    g_mutex_clear(&thread->text_mutex);
+    
+    if (thread->settings != NULL) {
+        g_object_unref(thread->settings);
+    }
 
     free(thread);
 }

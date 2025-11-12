@@ -203,6 +203,23 @@ static void livecaptions_settings_class_init(LiveCaptionsSettingsClass *klass) {
     gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, radio_button_1);
     gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, file_filter);
 
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, translation_enabled_switch);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, translation_service_combo);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, translation_target_language_combo);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, translation_mode_combo);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, amazon_credentials_expander);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, amazon_access_key_entry);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, amazon_secret_key_entry);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, amazon_region_entry);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, google_credentials_expander);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, google_api_key_entry);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, microsoft_credentials_expander);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, microsoft_subscription_key_entry);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, microsoft_region_entry);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, deepl_credentials_expander);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, deepl_api_key_entry);
+    gtk_widget_class_bind_template_child (widget_class, LiveCaptionsSettings, deepl_use_free_api_switch);
+
     gtk_widget_class_bind_template_callback (widget_class, report_cb);
     gtk_widget_class_bind_template_callback (widget_class, about_cb);
     gtk_widget_class_bind_template_callback (widget_class, rerun_benchmark_cb);
@@ -401,6 +418,11 @@ static void on_add_model_response(GtkNativeDialog *native,
     g_object_unref(native);
 }
 
+static void on_target_language_changed(GObject *object, GParamSpec *pspec, LiveCaptionsSettings *self);
+static void on_translation_mode_changed(GObject *object, GParamSpec *pspec, LiveCaptionsSettings *self);
+static void on_translation_service_changed(GObject *object, GParamSpec *pspec, LiveCaptionsSettings *self);
+static void update_credentials_visibility(LiveCaptionsSettings *self);
+
 static void livecaptions_settings_init(LiveCaptionsSettings *self) {
     gtk_widget_init_template(GTK_WIDGET(self));
 
@@ -444,4 +466,152 @@ static void livecaptions_settings_init(LiveCaptionsSettings *self) {
     }
 
     init_models_page(self);
+
+    // Bind translation settings
+    g_settings_bind(self->settings, "translation-enabled", 
+                   self->translation_enabled_switch, "active", 
+                   G_SETTINGS_BIND_DEFAULT);
+
+    // Bind translation service
+    gchar *service_type = g_settings_get_string(self->settings, "translation-service");
+    if (service_type != NULL) {
+        // Map service names to combo indices
+        int index = 0; // default to Amazon
+        if (g_str_equal(service_type, "amazon")) index = 0;
+        else if (g_str_equal(service_type, "google")) index = 1;
+        else if (g_str_equal(service_type, "microsoft")) index = 2;
+        else if (g_str_equal(service_type, "deepl")) index = 3;
+        adw_combo_row_set_selected(self->translation_service_combo, index);
+    } else {
+        // Default to Amazon
+        g_settings_set_string(self->settings, "translation-service", "amazon");
+        adw_combo_row_set_selected(self->translation_service_combo, 0);
+    }
+    g_free(service_type);
+
+    // Connect service change
+    g_signal_connect(self->translation_service_combo, "notify::selected",
+                    G_CALLBACK(on_translation_service_changed), self);
+    
+    // Update visibility of credential expanders
+    update_credentials_visibility(self);
+
+    // Bind target language
+    gchar *target_lang = g_settings_get_string(self->settings, "translation-target-language");
+    if (target_lang != NULL) {
+        // Map language codes to combo indices
+        int index = 0; // default to Spanish
+        if (g_str_equal(target_lang, "es")) index = 0;
+        else if (g_str_equal(target_lang, "fr")) index = 1;
+        else if (g_str_equal(target_lang, "de")) index = 2;
+        else if (g_str_equal(target_lang, "it")) index = 3;
+        else if (g_str_equal(target_lang, "pt")) index = 4;
+        else if (g_str_equal(target_lang, "zh")) index = 5;
+        else if (g_str_equal(target_lang, "ja")) index = 6;
+        else if (g_str_equal(target_lang, "ru")) index = 7;
+        adw_combo_row_set_selected(self->translation_target_language_combo, index);
+    }
+    g_free(target_lang);
+
+    // Connect target language change
+    g_signal_connect(self->translation_target_language_combo, "notify::selected",
+                    G_CALLBACK(on_target_language_changed), self);
+
+    // Bind translation mode
+    gchar *translation_mode = g_settings_get_string(self->settings, "translation-mode");
+    if (translation_mode != NULL) {
+        int index = g_str_equal(translation_mode, "final-only") ? 0 : 1;
+        adw_combo_row_set_selected(self->translation_mode_combo, index);
+    } else {
+        adw_combo_row_set_selected(self->translation_mode_combo, 0);
+    }
+    g_free(translation_mode);
+
+    // Connect translation mode change
+    g_signal_connect(self->translation_mode_combo, "notify::selected",
+                    G_CALLBACK(on_translation_mode_changed), self);
+
+    // Bind AWS credentials
+    g_settings_bind(self->settings, "amazon-access-key",
+                   self->amazon_access_key_entry, "text",
+                   G_SETTINGS_BIND_DEFAULT);
+    g_settings_bind(self->settings, "amazon-secret-key",
+                   self->amazon_secret_key_entry, "text",
+                   G_SETTINGS_BIND_DEFAULT);
+    g_settings_bind(self->settings, "amazon-region",
+                   self->amazon_region_entry, "text",
+                   G_SETTINGS_BIND_DEFAULT);
+
+    // Bind Google credentials
+    g_settings_bind(self->settings, "google-api-key",
+                   self->google_api_key_entry, "text",
+                   G_SETTINGS_BIND_DEFAULT);
+
+    // Bind Microsoft credentials
+    g_settings_bind(self->settings, "microsoft-subscription-key",
+                   self->microsoft_subscription_key_entry, "text",
+                   G_SETTINGS_BIND_DEFAULT);
+    g_settings_bind(self->settings, "microsoft-region",
+                   self->microsoft_region_entry, "text",
+                   G_SETTINGS_BIND_DEFAULT);
+
+    // Bind DeepL credentials
+    g_settings_bind(self->settings, "deepl-api-key",
+                   self->deepl_api_key_entry, "text",
+                   G_SETTINGS_BIND_DEFAULT);
+    g_settings_bind(self->settings, "deepl-use-free-api",
+                   self->deepl_use_free_api_switch, "active",
+                   G_SETTINGS_BIND_DEFAULT);
+}
+
+static void update_credentials_visibility(LiveCaptionsSettings *self)
+{
+    gchar *service_type = g_settings_get_string(self->settings, "translation-service");
+    
+    // Ocultar todos los expanders primero
+    gtk_widget_set_visible(GTK_WIDGET(self->amazon_credentials_expander), FALSE);
+    gtk_widget_set_visible(GTK_WIDGET(self->google_credentials_expander), FALSE);
+    gtk_widget_set_visible(GTK_WIDGET(self->microsoft_credentials_expander), FALSE);
+    gtk_widget_set_visible(GTK_WIDGET(self->deepl_credentials_expander), FALSE);
+    
+    // Mostrar el expander correspondiente al servicio seleccionado
+    if (g_str_equal(service_type, "amazon")) {
+        gtk_widget_set_visible(GTK_WIDGET(self->amazon_credentials_expander), TRUE);
+    } else if (g_str_equal(service_type, "google")) {
+        gtk_widget_set_visible(GTK_WIDGET(self->google_credentials_expander), TRUE);
+    } else if (g_str_equal(service_type, "microsoft")) {
+        gtk_widget_set_visible(GTK_WIDGET(self->microsoft_credentials_expander), TRUE);
+    } else if (g_str_equal(service_type, "deepl")) {
+        gtk_widget_set_visible(GTK_WIDGET(self->deepl_credentials_expander), TRUE);
+    }
+    
+    g_free(service_type);
+}
+
+static void on_translation_service_changed(GObject *object, GParamSpec *pspec, LiveCaptionsSettings *self)
+{
+    guint selected = adw_combo_row_get_selected(self->translation_service_combo);
+    const char *service_types[] = {"amazon", "google", "microsoft", "deepl"};
+    
+    if (selected < G_N_ELEMENTS(service_types)) {
+        g_settings_set_string(self->settings, "translation-service", service_types[selected]);
+        update_credentials_visibility(self);
+    }
+}
+
+static void on_target_language_changed(GObject *object, GParamSpec *pspec, LiveCaptionsSettings *self)
+{
+    guint selected = adw_combo_row_get_selected(self->translation_target_language_combo);
+    const char *lang_codes[] = {"es", "fr", "de", "it", "pt", "zh", "ja", "ru"};
+    
+    if (selected < G_N_ELEMENTS(lang_codes)) {
+        g_settings_set_string(self->settings, "translation-target-language", lang_codes[selected]);
+    }
+}
+
+static void on_translation_mode_changed(GObject *object, GParamSpec *pspec, LiveCaptionsSettings *self)
+{
+    guint selected = adw_combo_row_get_selected(self->translation_mode_combo);
+    const char *mode = (selected == 0) ? "final-only" : "realtime";
+    g_settings_set_string(self->settings, "translation-mode", mode);
 }

@@ -53,6 +53,24 @@ struct _LiveCaptionsSettings {
     GtkCheckButton *radio_button_1;
 
     GtkFileFilter *file_filter;
+
+    // Translation settings
+    AdwSwitchRow *translation_enabled_switch;
+    AdwComboRow *translation_service_combo;
+    AdwComboRow *translation_target_language_combo;
+    AdwComboRow *translation_mode_combo;
+    AdwExpanderRow *amazon_credentials_expander;
+    GtkEntry *amazon_access_key_entry;
+    GtkEntry *amazon_secret_key_entry;
+    GtkEntry *amazon_region_entry;
+    AdwExpanderRow *google_credentials_expander;
+    GtkEntry *google_api_key_entry;
+    AdwExpanderRow *microsoft_credentials_expander;
+    GtkEntry *microsoft_subscription_key_entry;
+    GtkEntry *microsoft_region_entry;
+    AdwExpanderRow *deepl_credentials_expander;
+    GtkEntry *deepl_api_key_entry;
+    GtkSwitch *deepl_use_free_api_switch;
 };
 
 G_BEGIN_DECLS

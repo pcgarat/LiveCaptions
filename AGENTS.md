@@ -1,0 +1,1 @@
+Para construir la aplicacion se usa gnome-builder

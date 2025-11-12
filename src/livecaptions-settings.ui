@@ -208,6 +208,198 @@
 
         <child>
           <object class="AdwPreferencesGroup">
+            <property name="description" translatable="yes">Translate captions to another language using cloud translation services</property>
+            <property name="title" translatable="yes">Translation</property>
+
+            <child>
+              <object class="AdwSwitchRow" id="translation_enabled_switch">
+                <property name="title" translatable="yes">Enable Translation</property>
+                <property name="subtitle" translatable="yes">Translate captions to selected target language</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwComboRow" id="translation_service_combo">
+                <property name="title" translatable="yes">Translation Service</property>
+                <property name="model">
+                  <object class="GtkStringList">
+                    <items>
+                      <item translatable="yes">Amazon Translate</item>
+                      <item translatable="yes">Google Translate</item>
+                      <item translatable="yes">Microsoft Translator</item>
+                      <item translatable="yes">DeepL</item>
+                    </items>
+                  </object>
+                </property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwComboRow" id="translation_target_language_combo">
+                <property name="title" translatable="yes">Target Language</property>
+                <property name="model">
+                  <object class="GtkStringList">
+                    <items>
+                      <item translatable="yes">Spanish (es)</item>
+                      <item translatable="yes">French (fr)</item>
+                      <item translatable="yes">German (de)</item>
+                      <item translatable="yes">Italian (it)</item>
+                      <item translatable="yes">Portuguese (pt)</item>
+                      <item translatable="yes">Chinese (zh)</item>
+                      <item translatable="yes">Japanese (ja)</item>
+                      <item translatable="yes">Russian (ru)</item>
+                    </items>
+                  </object>
+                </property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwComboRow" id="translation_mode_combo">
+                <property name="title" translatable="yes">Translation Mode</property>
+                <property name="subtitle" translatable="yes">Final-only: translate only complete sentences. Realtime: also translate partial sentences</property>
+                <property name="model">
+                  <object class="GtkStringList">
+                    <items>
+                      <item translatable="yes">Final Only</item>
+                      <item translatable="yes">Realtime</item>
+                    </items>
+                  </object>
+                </property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwExpanderRow" id="amazon_credentials_expander">
+                <property name="title" translatable="yes">Amazon Translate Credentials</property>
+                <property name="subtitle" translatable="yes">Required for Amazon Translate service</property>
+
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Access Key ID</property>
+                    <child type="suffix">
+                      <object class="GtkEntry" id="amazon_access_key_entry">
+                        <property name="visibility">False</property>
+                        <property name="placeholder-text" translatable="yes">AWS Access Key ID</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Secret Access Key</property>
+                    <child type="suffix">
+                      <object class="GtkEntry" id="amazon_secret_key_entry">
+                        <property name="visibility">False</property>
+                        <property name="input-purpose">password</property>
+                        <property name="placeholder-text" translatable="yes">AWS Secret Access Key</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Region</property>
+                    <child type="suffix">
+                      <object class="GtkEntry" id="amazon_region_entry">
+                        <property name="placeholder-text" translatable="yes">us-east-1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwExpanderRow" id="google_credentials_expander">
+                <property name="title" translatable="yes">Google Translate Credentials</property>
+                <property name="subtitle" translatable="yes">Required for Google Translate service</property>
+
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">API Key</property>
+                    <child type="suffix">
+                      <object class="GtkEntry" id="google_api_key_entry">
+                        <property name="visibility">False</property>
+                        <property name="input-purpose">password</property>
+                        <property name="placeholder-text" translatable="yes">Google Cloud API Key</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwExpanderRow" id="microsoft_credentials_expander">
+                <property name="title" translatable="yes">Microsoft Translator Credentials</property>
+                <property name="subtitle" translatable="yes">Required for Microsoft Translator service</property>
+
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Subscription Key</property>
+                    <child type="suffix">
+                      <object class="GtkEntry" id="microsoft_subscription_key_entry">
+                        <property name="visibility">False</property>
+                        <property name="input-purpose">password</property>
+                        <property name="placeholder-text" translatable="yes">Azure Subscription Key</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Region</property>
+                    <child type="suffix">
+                      <object class="GtkEntry" id="microsoft_region_entry">
+                        <property name="placeholder-text" translatable="yes">global</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwExpanderRow" id="deepl_credentials_expander">
+                <property name="title" translatable="yes">DeepL Credentials</property>
+                <property name="subtitle" translatable="yes">Required for DeepL service</property>
+
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">API Key</property>
+                    <child type="suffix">
+                      <object class="GtkEntry" id="deepl_api_key_entry">
+                        <property name="visibility">False</property>
+                        <property name="input-purpose">password</property>
+                        <property name="placeholder-text" translatable="yes">DeepL API Key</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Use Free API</property>
+                    <child type="suffix">
+                      <object class="GtkSwitch" id="deepl_use_free_api_switch">
+                        <property name="valign">center</property>
+                        <property name="active">True</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            
+          </object>
+        </child>
+
+        <child>
+          <object class="AdwPreferencesGroup">
             <property name="description" translatable="yes"></property>
             <property name="title" translatable="yes">About</property>
 
